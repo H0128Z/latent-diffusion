@@ -4,6 +4,9 @@ from functools import partial
 import clip
 from einops import rearrange, repeat
 import kornia
+import os
+from PIL import Image
+import numpy as np
 
 
 from ldm.modules.x_transformer import Encoder, TransformerWrapper  # TODO: can we directly rely on lucidrains code and simply add this as a reuirement? --> test
@@ -102,11 +105,11 @@ class BERTEmbedder(AbstractEncoder):
         # output of length 77
         return self(text)
 
-
+from torchvision.utils import save_image
 class SpatialRescaler(nn.Module):
     def __init__(self,
                  n_stages=1,
-                 method='bilinear',
+                 method='nearest',
                  multiplier=0.5,
                  in_channels=3,
                  out_channels=None,
@@ -125,8 +128,9 @@ class SpatialRescaler(nn.Module):
     def forward(self,x):
         for stage in range(self.n_stages):
             x = self.interpolator(x, scale_factor=self.multiplier)
-
-
+     
+        #save_image(x, 'logs/output.png', normalize=True)
+        
         if self.remap_output:
             x = self.channel_mapper(x)
         return x
@@ -199,4 +203,19 @@ class FrozenClipImageEmbedder(nn.Module):
     def forward(self, x):
         # x is assumed to be in range [-1,1]
         return self.model.encode_image(self.preprocess(x))
+    
+class FullyConnectedEmbedder(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dim=128, n_layers=2):
+        super().__init__()
+        layers = [nn.Linear(input_dim, hidden_dim), nn.SiLU()]
+        for _ in range(n_layers - 1):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.SiLU()])
+        layers.append(nn.Linear(hidden_dim, output_dim))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+
+    def encode(self, x):
+        return self.forward(x)
 
